@@ -1,0 +1,101 @@
+#!/usr/bin/env python2
+
+import os
+import sys
+import json
+import logging
+import uuid
+
+from subprocess import Popen, PIPE
+
+#
+# This update hook allows the specification of two types of branches:
+#
+# 1. merge-only branch
+# 2. auth-only branch
+#
+# A merge-only branch is any branch which rejects non-merge commits
+# An auth-only branch is any branch which rejects any commit for 
+# which a GPG signature cannot be verified.
+#
+# The config file is expected to be a json formatted file which
+# contains an object in which each key is a ref name and each
+# value is an object which further specifies two key/value pairs
+#
+# merge-only: boolean: states whether this ref should only
+#             accept merge commits.
+# auth-only: string: path to a GPG home dir to use to verify
+#            commits on this ref. An empty string is the default
+#            and means no verification.
+#
+# An example JSON object is provided below:
+#
+# { "refs/heads/master": { "merge-only": true, "auth-only": "/gpg-homes/master"} }
+#
+#
+
+config_path = ''
+log_path    = ''
+bin_git     = ''
+
+def die(msg):
+    sys.stderr.write('%s\n' % msg)
+    sys.exit(1)
+
+def internal_error(logmsg):
+    #TODO: Add timestamps to logged errors
+    errid = uuid.uuid1().get_time_low()
+    logging.error('%s: %s' % (errid, logmsg))
+    msg = 'Internal error occured. Please report this error to your administrator\nError ID: %s' % errid
+    die(msg)
+
+def commit_is_merge(commit):
+    nparents = 0
+    args     = [bin_git, 'cat-file', '-p', commit]
+    cmd      = Popen(args, stdout=PIPE, stderr=PIPE)
+    stdout, stderr = cmd.communicate()
+    if stderr:
+        internal_error('%s: %s' % (args.join(' '), stderr))
+    for line in stdout.split('\n'):
+        columns = line.split()
+        if len(columns) < 1: continue
+        if columns[0] == 'parent': nparents += 1
+    if nparents > 1:
+        return True
+    return False
+
+def commit_is_authenticated(commit, gpg_home):
+    os.environ['GNUPGHOME'] = gpg_home
+    args = [ bin_git, 'rev-list', '-n1', '--pretty=%G?', commit]
+    cmd  = Popen(args, stdout=PIPE, stderr=PIPE)
+    stdout, stderr = cmd.communicate()
+    if stderr:
+        internal_error('%s: %s' % (args.join(' '), stderr))
+    lines = stdout.split('\n')
+    if len(lines) < 2:
+        internal_error('unexpectd output: %s' % stdout)
+    if lines[1] not in ['G', 'B', 'U', 'N']:
+        internal_error('unexpected output: %s', lines.join('|'))
+    if lines[1] == 'G':
+        return True
+    return False
+
+if __name__ == '__main__':
+    refname = sys.argv[1]
+    current = sys.argv[2]
+    future  = sys.argv[3]
+
+    try:
+        with open(config_path) as fd:
+            config = json.load(fd)
+    except IOError as e:
+        internal_error('%s: %s' % (config_path, e.strerror))
+
+    refcfg = config.get(refname)
+    if refcfg:
+        merge_only = refcfg.get('merge-only')
+        gpg_home   = refcfg.get('auth-only', '')
+        if merge_only and not commit_is_merge(future):
+            die('Rejected update to %s: this branch enforces a merge-only policy on pushed commits' % refname)
+        if os.path.isdir(gpg_home) and not commit_is_authenticated(future, gpg_home):
+            die('Rejected update to %s: this branch enforces an authenticated-only policy on pushed commits' % refname)
