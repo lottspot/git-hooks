@@ -3,6 +3,7 @@
 import os
 import sys
 import json
+import string
 import logging
 import uuid
 import errno
@@ -72,20 +73,19 @@ def commit_is_merge(commit):
 
 def commit_is_authenticated(commit, gpg_home):
     os.environ['GNUPGHOME'] = gpg_home
-    args = [ 'git', 'rev-list', '-n1', '--pretty=%G?', commit]
+    args = [ 'git', 'log', '-n1', '--pretty=%G?', commit]
     try:
         cmd = Popen(args, stdout=PIPE, stderr=PIPE)
     except OSError as e:
         internal_error('%s: %s' % (args.join(' '), e.strerror))
     stdout, stderr = cmd.communicate()
     if stderr:
-        internal_error('%s: %s' % (args.join(' '), stderr))
-    lines = stdout.split('\n')
-    if len(lines) < 2:
-        internal_error('unexpectd output: %s' % stdout)
-    if lines[1] not in ['G', 'B', 'U', 'N']:
-        internal_error('unexpected output: %s', lines.join('|'))
-    if lines[1] == 'G':
+        internal_error('%s: %s' % (args.join(' '), stderr.strip()))
+    stdout = stdout.strip()
+    if stdout not in ['G', 'B', 'U', 'N']:
+        table = string.maketrans('\n', ' ')
+        internal_error('unexpected output: %s' % stdout.translate(table))
+    if stdout == 'G':
         return True
     return False
 
