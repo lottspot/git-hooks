@@ -5,6 +5,7 @@ import sys
 import json
 import logging
 import uuid
+import errno
 
 from subprocess import Popen, PIPE
 
@@ -34,9 +35,11 @@ from subprocess import Popen, PIPE
 #
 #
 
-config_path = ''
-log_path    = ''
-bin_git     = ''
+base_dir    = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'hooks-data')
+cfg_dir     = '%s/cfg' % base_dir
+log_dir     = '%s/log' % base_dir
+config_path = '%s/update.json' % cfg_dir
+log_path    = '%s/update.log'  % log_dir
 
 def die(msg):
     sys.stderr.write('%s\n' % msg)
@@ -51,8 +54,11 @@ def internal_error(logmsg):
 
 def commit_is_merge(commit):
     nparents = 0
-    args     = [bin_git, 'cat-file', '-p', commit]
-    cmd      = Popen(args, stdout=PIPE, stderr=PIPE)
+    args     = ['git', 'cat-file', '-p', commit]
+    try:
+        cmd = Popen(args, stdout=PIPE, stderr=PIPE)
+    except OSError as e:
+        internal_error('%s: %s' % (args.join(' '), e.strerror))
     stdout, stderr = cmd.communicate()
     if stderr:
         internal_error('%s: %s' % (args.join(' '), stderr))
@@ -66,8 +72,11 @@ def commit_is_merge(commit):
 
 def commit_is_authenticated(commit, gpg_home):
     os.environ['GNUPGHOME'] = gpg_home
-    args = [ bin_git, 'rev-list', '-n1', '--pretty=%G?', commit]
-    cmd  = Popen(args, stdout=PIPE, stderr=PIPE)
+    args = [ 'git', 'rev-list', '-n1', '--pretty=%G?', commit]
+    try:
+        cmd = Popen(args, stdout=PIPE, stderr=PIPE)
+    except OSError as e:
+        internal_error('%s: %s' % (args.join(' '), e.strerror))
     stdout, stderr = cmd.communicate()
     if stderr:
         internal_error('%s: %s' % (args.join(' '), stderr))
@@ -86,9 +95,21 @@ if __name__ == '__main__':
     future  = sys.argv[3]
 
     try:
+        os.makedirs(log_dir)
+    except (IOError, OSError) as e:
+        if e.errno != errno.EEXIST:
+            die('Unidentified internal error. Please inform the administrator of this issue.')
+
+    try:
+        loghandle = logging.FileHandler(log_path)
+    except (IOError, OSError) as e:
+        die('Unidentified internal error. Please inform the administrator of this issue.')
+    logging.getLogger().addHandler(loghandle)
+
+    try:
         with open(config_path) as fd:
             config = json.load(fd)
-    except IOError as e:
+    except (IOError, OSError) as e:
         internal_error('%s: %s' % (config_path, e.strerror))
 
     refcfg = config.get(refname)
