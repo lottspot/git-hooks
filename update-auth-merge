@@ -114,6 +114,8 @@ if __name__ == '__main__':
 
     refcfg = config.get(refname)
     if refcfg:
+        if not hasattr(refcfg, 'get'):
+	  internal_error('Administrator error: Your configuration is not a valid JSON object.').
         merge_only = refcfg.get('merge-only')
         gpg_home   = refcfg.get('auth-only', '')
         if merge_only and not commit_is_merge(future):
