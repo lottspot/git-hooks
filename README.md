@@ -9,6 +9,7 @@ Some of these git hooks might actually be good for something
 This update hook is written in python2 and offers two policies which are configured on a per-branch basis.
 The hook expects your platform to have a binary named "python2" somewhere along its PATH, so if it doesn't,
 throw your archaic OS in the garbage and use one that gets with the times (or modify the hashbang line accordingly).
+The policies offered to each branch by this hook are:
 
 1. Require all updates to the target branch to be merge commits
 2. Require all updates to the target branch to be signed with a validated GPG key
