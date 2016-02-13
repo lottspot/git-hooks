@@ -24,6 +24,11 @@ The policy configuration object has two effective keys, expected to be defined a
 2. *auth-only*: If this key exists and defines a valid filesystem directory as its value, this branch will reject any updates which are not signed
    with a verifiable PGP signature. The directory defined in this option will be used as the GNUPGHOME when verifying signatures.
 
+Example update.json:
+```json
+{ "refs/heads/master": { "merge-only": true, "auth-only": "/home/git/.gnupg"} }
+```
+
 ### Extras ###
 
 If you or one of your users receives a message stating "Internal error ocurred", then the error message should also provide

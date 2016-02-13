@@ -32,7 +32,7 @@ from subprocess import Popen, PIPE
 #
 # An example JSON object is provided below:
 #
-# { "refs/heads/master": { "merge-only": true, "auth-only": "/gpg-homes/master"} }
+# { "refs/heads/master": { "merge-only": true, "auth-only": "/home/git/.gnupg"} }
 #
 #
 
