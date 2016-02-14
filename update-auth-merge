@@ -2,11 +2,9 @@
 
 import os
 import sys
-import json
 import string
 import logging
 import uuid
-import errno
 
 from subprocess import Popen, PIPE
 
@@ -20,27 +18,13 @@ from subprocess import Popen, PIPE
 # An auth-only branch is any branch which rejects any commit for 
 # which a GPG signature cannot be verified.
 #
-# The config file is expected to be a json formatted file which
-# contains an object in which each key is a ref name and each
-# value is an object which further specifies two key/value pairs
+# The plugin utilizes the following git config directives:
 #
-# merge-only: boolean: states whether this ref should only
-#             accept merge commits.
-# auth-only: string: path to a GPG home dir to use to verify
-#            commits on this ref. An empty string is the default
-#            and means no verification.
+# hook.<name>.logPath            : (path)     Path to the hook error log file. Uses info/update.log by default
+# branch.<name>.enforceMergeOnly : (boolean)  Enforce a merge-only policy on the named branch
+# branch.<name>.enforceAuthOnly  : (boolean)  Enforce an auth-only policy on the named branch
+# branch.<name>.authGpgHome      : (path)     Directory to use as GNUPGHOME when enforcing auth-only policy on named branch
 #
-# An example JSON object is provided below:
-#
-# { "refs/heads/master": { "merge-only": true, "auth-only": "/home/git/.gnupg"} }
-#
-#
-
-base_dir    = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'hooks-data')
-cfg_dir     = '%s/cfg' % base_dir
-log_dir     = '%s/log' % base_dir
-config_path = '%s/update.json' % cfg_dir
-log_path    = '%s/update.log'  % log_dir
 
 def die(msg):
     sys.stderr.write('%s\n' % msg)
@@ -71,8 +55,9 @@ def commit_is_merge(commit):
         return True
     return False
 
-def commit_is_authenticated(commit, gpg_home):
-    os.environ['GNUPGHOME'] = gpg_home
+def commit_is_authenticated(commit, auth_home):
+    if auth_home:
+        os.environ['GNUPGHOME'] = auth_home
     args = [ 'git', 'log', '-n1', '--pretty=%G?', commit]
     try:
         cmd = Popen(args, stdout=PIPE, stderr=PIPE)
@@ -89,36 +74,64 @@ def commit_is_authenticated(commit, gpg_home):
         return True
     return False
 
-if __name__ == '__main__':
-    refname = sys.argv[1]
-    current = sys.argv[2]
-    future  = sys.argv[3]
+def value_to_bool(value):
+    if value == 'true':
+        return True
+    elif value == 'false':
+        return False
+    else:
+        return None
 
-    try:
-        os.makedirs(log_dir)
-    except (IOError, OSError) as e:
-        if e.errno != errno.EEXIST:
-            die('Unidentified internal error. Please inform the administrator of this issue.')
+class Config(object):
+    def __init__(self):
+        self.cached = {}
+    def get(self, key, default=None, astype=''):
+        if not self.cached.has_key(key):
+            args = [ 'git', 'config', '--get' ]
+            if astype:
+                args.append('--%s' % astype)
+            args.append(key)
+            try:
+                cmd  = Popen(args, stdout=PIPE, stderr=PIPE)
+            except OSError as e:
+                internal_error('%s: %s' % (args.join(' '), e.strerror))
+            stdout, stderr = cmd.communicate()
+            if stderr:
+                trmap = string.maketrans('\n', ' ')
+                internal_error('error retrieving config key %s: %s' % (key, stderr.translate(trmap)))
+            value = stdout.strip()
+            if not value:
+                value = default
+            self.cached[key] = value
+        return self.cached[key]
+
+if __name__ == '__main__':
+    hookname = os.path.basename(sys.argv[0])
+    refname  = sys.argv[1]
+    current  = sys.argv[2]
+    future   = sys.argv[3]
+
+    # Enforce policy on branches only
+    if not refname.startswith('refs/heads/'):
+        sys.exit(0)
+
+    cfg        = Config()
+    log_path   = cfg.get('hook.%s.logpath' % hookname, 'info/update.log', 'path')
+    branchname = refname.split('/')[-1]
 
     try:
         loghandle = logging.FileHandler(log_path)
     except (IOError, OSError) as e:
-        die('Unidentified internal error. Please inform the administrator of this issue.')
+        loghandle = logging.FileHandler(os.devnull)
     logging.getLogger().addHandler(loghandle)
 
-    try:
-        with open(config_path) as fd:
-            config = json.load(fd)
-    except (IOError, OSError) as e:
-        internal_error('%s: %s' % (config_path, e.strerror))
+    merge_only = cfg.get('branch.%s.enforcemergeonly' % branchname, 'false', 'bool')
+    auth_only  = cfg.get('branch.%s.enforceauthonly' % branchname, 'false', 'bool')
+    auth_home  = cfg.get('branch.%s.authgpghome' % branchname, '', 'path')
 
-    refcfg = config.get(refname)
-    if refcfg:
-        if not hasattr(refcfg, 'get'):
-	  internal_error('Administrator error: Your configuration is not a valid JSON object.').
-        merge_only = refcfg.get('merge-only')
-        gpg_home   = refcfg.get('auth-only', '')
-        if merge_only and not commit_is_merge(future):
-            die('Rejected update to %s: this branch enforces a merge-only policy on pushed commits' % refname)
-        if os.path.isdir(gpg_home) and not commit_is_authenticated(future, gpg_home):
-            die('Rejected update to %s: this branch enforces an authenticated-only policy on pushed commits' % refname)
+    if value_to_bool(merge_only) and not commit_is_merge(future):
+        die('Rejected update to %s: this branch enforces a merge-only policy on pushed commits' % refname)
+    if value_to_bool(auth_only) and not commit_is_authenticated(future, auth_home):
+        die('Rejected update to %s: this branch enforces an authenticated-only policy on pushed commits' % refname)
+
+    sys.exit(0)
