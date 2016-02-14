@@ -22,8 +22,3 @@ The hook uses the following git config directives:
 - **branch.<name>.enforceMergeOnly** : *(boolean)*   Enforce a merge-only policy on the named branch. Defaults to off
 - **branch.<name>.enforceAuthOnly**  : *(boolean)*   Enforce an auth-only policy on the named branch. Defaults to off
 - **branch.<name>.authGpgHome**      : *(directory)* Directory to use as GNUPGHOME when enforcing auth-only policy on named branch. Defaults to system value
-
-### Dumb caveats ###
-
-The error log messages currently do not include timestamps. This is for no other reason than my own laziness and lack of need.
-Pull requests welcome :)

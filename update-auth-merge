@@ -120,6 +120,8 @@ if __name__ == '__main__':
         loghandle = logging.FileHandler(log_path)
     except (IOError, OSError) as e:
         loghandle = logging.FileHandler(os.devnull)
+    logformat = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
+    loghandle.setFormatter(logformat)
     logging.getLogger().addHandler(loghandle)
 
     # File opened; enable logging
