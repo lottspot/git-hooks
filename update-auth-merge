@@ -37,6 +37,32 @@ def internal_error(logmsg):
     msg = 'Internal error occured. Please report this error to your administrator\nError ID: %s' % errid
     die(msg)
 
+def value_to_bool(value):
+    if value == 'true':
+        return True
+    elif value == 'false':
+        return False
+    else:
+        return None
+
+def cfg_get(key, default=None, astype=''):
+    args = [ 'git', 'config', '--get' ]
+    if astype:
+        args.append('--%s' % astype)
+    args.append(key)
+    try:
+        cmd  = Popen(args, stdout=PIPE, stderr=PIPE)
+    except OSError as e:
+        internal_error('%s: %s' % (args.join(' '), e.strerror))
+    stdout, stderr = cmd.communicate()
+    if stderr:
+        trmap = string.maketrans('\n', ' ')
+        internal_error('error retrieving config key %s: %s' % (key, stderr.translate(trmap)))
+    value = stdout.strip()
+    if not value:
+        value = default
+    return value
+
 def commit_is_merge(commit):
     nparents = 0
     args     = ['git', 'cat-file', '-p', commit]
@@ -74,37 +100,6 @@ def commit_is_authenticated(commit, auth_home):
         return True
     return False
 
-def value_to_bool(value):
-    if value == 'true':
-        return True
-    elif value == 'false':
-        return False
-    else:
-        return None
-
-class Config(object):
-    def __init__(self):
-        self.cached = {}
-    def get(self, key, default=None, astype=''):
-        if not self.cached.has_key(key):
-            args = [ 'git', 'config', '--get' ]
-            if astype:
-                args.append('--%s' % astype)
-            args.append(key)
-            try:
-                cmd  = Popen(args, stdout=PIPE, stderr=PIPE)
-            except OSError as e:
-                internal_error('%s: %s' % (args.join(' '), e.strerror))
-            stdout, stderr = cmd.communicate()
-            if stderr:
-                trmap = string.maketrans('\n', ' ')
-                internal_error('error retrieving config key %s: %s' % (key, stderr.translate(trmap)))
-            value = stdout.strip()
-            if not value:
-                value = default
-            self.cached[key] = value
-        return self.cached[key]
-
 if __name__ == '__main__':
     hookname = os.path.basename(sys.argv[0])
     refname  = sys.argv[1]
@@ -115,8 +110,7 @@ if __name__ == '__main__':
     if not refname.startswith('refs/heads/'):
         sys.exit(0)
 
-    cfg        = Config()
-    log_path   = cfg.get('hook.%s.logpath' % hookname, 'info/update.log', 'path')
+    log_path   = cfg_get('hook.%s.logpath' % hookname, 'info/update.log', 'path')
     branchname = refname.split('/')[-1]
 
     try:
@@ -125,9 +119,9 @@ if __name__ == '__main__':
         loghandle = logging.FileHandler(os.devnull)
     logging.getLogger().addHandler(loghandle)
 
-    merge_only = cfg.get('branch.%s.enforcemergeonly' % branchname, 'false', 'bool')
-    auth_only  = cfg.get('branch.%s.enforceauthonly' % branchname, 'false', 'bool')
-    auth_home  = cfg.get('branch.%s.authgpghome' % branchname, '', 'path')
+    merge_only = cfg_get('branch.%s.enforcemergeonly' % branchname, 'false', 'bool')
+    auth_only  = cfg_get('branch.%s.enforceauthonly' % branchname, 'false', 'bool')
+    auth_home  = cfg_get('branch.%s.authgpghome' % branchname, '', 'path')
 
     if value_to_bool(merge_only) and not commit_is_merge(future):
         die('Rejected update to %s: this branch enforces a merge-only policy on pushed commits' % refname)
