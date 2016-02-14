@@ -110,6 +110,9 @@ if __name__ == '__main__':
     if not refname.startswith('refs/heads/'):
         sys.exit(0)
 
+    # Disable logging prior to opening log file
+    logging.disable(logging.CRITICAL)
+
     log_path   = cfg_get('hook.%s.logpath' % hookname, 'info/update.log', 'path')
     branchname = refname.split('/')[-1]
 
@@ -118,6 +121,9 @@ if __name__ == '__main__':
     except (IOError, OSError) as e:
         loghandle = logging.FileHandler(os.devnull)
     logging.getLogger().addHandler(loghandle)
+
+    # File opened; enable logging
+    logging.disable(0)
 
     merge_only = cfg_get('branch.%s.enforcemergeonly' % branchname, 'false', 'bool')
     auth_only  = cfg_get('branch.%s.enforceauthonly' % branchname, 'false', 'bool')
